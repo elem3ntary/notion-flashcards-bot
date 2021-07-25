@@ -9,17 +9,24 @@ from utils import env
 PORT = env['PORT']
 TG_TOKEN = env['TG_TOKEN']
 
-# Setting up public url for dev purposes
+
+def gen_public_url():
+    return ngrok.connect(PORT, bind_tls=True, host_header="just_testing123").public_url
+
+
 if utils.env['DEV']:
-    https_tunnel = ngrok.connect(PORT, bind_tls=True)
-    webhook_info = bot.get_webhook_info()
-    if webhook_info.url != https_tunnel:
-        bot.set_webhook(f"{https_tunnel.public_url}/{TG_TOKEN}")
+    env['DOMAIN'] = gen_public_url()
+
+DOMAIN = env['DOMAIN']
+# Setting up webhook
+webhook_info = bot.get_webhook_info()
+if webhook_info.url != DOMAIN:
+    bot.set_webhook(f"{DOMAIN}/{TG_TOKEN}")
 
 
-# Process webhook calls
 @app.route(f"/{TG_TOKEN}", methods=["POST"])
 def tg_token():
+    """Process Telegram webhook calls"""
     req_data = request.get_data().decode("utf-8")
     update = telebot.types.Update.de_json(req_data)
     bot.process_new_updates([update])
@@ -27,4 +34,4 @@ def tg_token():
     return ""
 
 
-app.run(port=PORT)
+app.run(port=PORT, debug=True)
