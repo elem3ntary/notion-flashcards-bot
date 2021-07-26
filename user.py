@@ -6,8 +6,10 @@ from bson.objectid import ObjectId
 import requests
 from base64 import b64encode
 from typing import Union
+from notion_api import NotionAPI
 from uuid import uuid4 as uuid
 from datetime import datetime
+import pandas as pd
 
 users = get_database()["users"]
 
@@ -16,7 +18,13 @@ class User:
     redirect_uri = f"http://localhost:3000/notion_auth"
 
     def __init__(self, user: Collection):
-        self.user = user
+        # self._model = pd.DataFrame(list(user))
+        self._model = user
+
+        try:
+            self.notion = NotionAPI(user["access_token"])
+        except KeyError:
+            pass
 
     @staticmethod
     def from_id(_id: str) -> Union["User", None]:
@@ -56,7 +64,7 @@ class User:
             "client_id": env['NOTION_CLIENT_ID'],
             "redirect_uri": self.redirect_uri,
             "response_type": "code",
-            "state": str(self.user["_id"])
+            "state": str(self._model["_id"])
 
         }
         url = "https://api.notion.com/v1/oauth/authorize?"
@@ -78,10 +86,20 @@ class User:
         if res.get("error"):
             return None
 
-        users.update_one({"_id": self.user["_id"]}, {"$set": res})
+        users.update_one({"_id": self._model["_id"]}, {"$set": res})
 
         return res
 
-# @staticmethod
-# def get_user_by_state_token(state_token):
-#     return users.find_one({"state_tokens": {"$in": [state_token]}})
+    def is_logged_in_notion(self) -> bool:
+        return bool(self._model.get("access_token", None))
+
+    def model_db_id(self) -> dict:
+        return {"_id": self._model["_id"]}
+
+    def add_page(self, page_id: str):
+        users.update_one(self.model_db_id(), {"$addToSet": {"pages": page_id}})
+        self.notion.page
+
+        # @staticmethod
+        # def get_user_by_state_token(state_token):
+        #     return users.find_one({"state_tokens": {"$in": [state_token]}})

@@ -15,6 +15,10 @@ def notion_auth():
     result = user.fetch_access_token(code)
     if not result:
         return 400, "Oops. Try again latter!"
-    bot.send_photo(chat_id=user.user["user_id"], photo=result["workspace_icon"],
-                   caption=f"Workspace name: {result['workspace_name']}")
-    return result
+    caption = f"""
+Successfully logged in ✅
+Workspace name: {result['workspace_name']}
+    """
+    bot.send_photo(chat_id=user._model["user_id"], photo=result["workspace_icon"],
+                   caption=caption)
+    return "Success"
