@@ -3,6 +3,10 @@ from telebot.types import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup
 from utils import env
 from user import User
 import re
+import logging
+
+logger = telebot.logger
+telebot.logger.setLevel(logging.DEBUG)
 
 telebot.apihelper.ENABLE_MIDDLEWARE = True
 bot = telebot.TeleBot(env['TG_TOKEN'])
@@ -10,6 +14,10 @@ SESSIONS: dict[str, User] = {}
 
 bot.set_my_commands([
     BotCommand("/start", "Shows basic bot info"),
+    BotCommand("/add_page", "Adds new page to bot`s library"),
+    BotCommand("/reload", "Reloads flashcards from pages you have chosen for"),
+    BotCommand("/study", "Starts active learning mode"),
+    BotCommand("/passive", "Shows passive learning mode settings"),
     BotCommand("/login", "Process login via Notion")
 ])
 
@@ -59,6 +67,12 @@ RESERVED_KEYWORDS = {
 }
 
 
+@bot.message_handler(func=lambda m: RESERVED_KEYWORDS.get(m.text, None))
+def reserved_words(message):
+    action = RESERVED_KEYWORDS[message.text]
+    return action(message)
+
+
 @bot.message_handler(commands=["login"])
 def login(message):
     markup = InlineKeyboardMarkup()
@@ -70,23 +84,43 @@ def login(message):
 @bot.message_handler(commands=["add_page"])
 def add_page(message):
     text = "Send me link to the page:"
-    markup = ReplyKeyboardMarkup(one_time_keyboard=True)
-    # url="https://bloom-eyebrow-74f.notion.site/Where-to-get-page-link-c1ede68fd209478ab1ac96f277a405e0"
+    markup = ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
     button = KeyboardButton(return_to_main)
     markup.add(button)
-    next_message = bot.reply_to(message, text, reply_markup=markup)
+    next_message = bot.reply_to(message, text, reply_markup=markup, parse_mode="Markdown")
     bot.register_next_step_handler(next_message, add_page_save)
 
 
 def add_page_save(message):
     match = re.search(r"https://www.notion.so/.+-(.+)", message.text)
 
-    if action := RESERVED_KEYWORDS.get(message.text):
+    # TODO: забрати костиль та зробити декоратор
+    if action := RESERVED_KEYWORDS.get(message.text, None):
         return action(message)
 
     if not match:
         bot.send_message(message.from_user.id, "Invalid link")
         return add_page(message)
-    groups = match.groups()
-    bot.session.add_page(groups[0])
-# validation
+
+    page_id = match.groups()[0]
+    result = bot.session.add_page(page_id)
+    if not result:
+        text = "Page already exists or an error happened ⛔️"
+    else:
+        page_title = bot.session.notion.page().retrieve(page_id).get_title()
+        text = f"Page \"{page_title}\" successfully added ✅"
+
+    bot.send_message(message.from_user.id, text)
+
+
+@bot.message_handler(commands=["reload"])
+def reload(message):
+    # TODO: show pages to reload, sorted by reload time
+    markup = InlineKeyboardMarkup()
+    last_three_button = InlineKeyboardButton("Reload 3 most recent", callback_data="reload_last_three")
+    markup.add(last_three_button)
+    items = bot.session.get_pages(1)
+    for item in items:
+        markup.add(InlineKeyboardButton(item["title"], callback_data=f"reload_{item['_id']}"))
+
+    bot.reply_to(message, "Choose which page to reload", reply_markup=markup)

@@ -7,18 +7,15 @@ import requests
 from base64 import b64encode
 from typing import Union
 from notion_api import NotionAPI
-from uuid import uuid4 as uuid
-from datetime import datetime
-import pandas as pd
 
 users = get_database()["users"]
+pages = get_database()["pages"]
 
 
 class User:
     redirect_uri = f"http://localhost:3000/notion_auth"
 
     def __init__(self, user: Collection):
-        # self._model = pd.DataFrame(list(user))
         self._model = user
 
         try:
@@ -96,10 +93,25 @@ class User:
     def model_db_id(self) -> dict:
         return {"_id": self._model["_id"]}
 
-    def add_page(self, page_id: str):
-        users.update_one(self.model_db_id(), {"$addToSet": {"pages": page_id}})
-        self.notion.page
+    def add_page(self, page_id: str) -> bool:
+        result = pages.find_one({"page_id": page_id, "user": self._model["_id"]})
+        if result:
+            return False
+        page = self.notion.page().retrieve(page_id)
+        block = self.notion.block().retrieve(page_id)
+        flashcards = block.parse_flashcards()
+        pages.insert_one({
+            "page_id": page_id,
+            "user": self._model["_id"],
+            "title": page.get_title(),
+            "flashcards": flashcards
+        })
+        return True
 
-        # @staticmethod
-        # def get_user_by_state_token(state_token):
-        #     return users.find_one({"state_tokens": {"$in": [state_token]}})
+    def get_pages(self, page_number, per_page=5):
+        skip = (page_number - 1) * per_page if page_number > 0 else 0
+        return pages.find({"user": self._model["_id"]}).skip(skip).limit(per_page)
+
+    # @staticmethod
+# def get_user_by_state_token(state_token):
+#     return users.find_one({"state_tokens": {"$in": [state_token]}})
