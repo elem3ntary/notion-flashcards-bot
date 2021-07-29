@@ -8,8 +8,11 @@ from base64 import b64encode
 from typing import Union
 from notion_api import NotionAPI
 
-users = get_database()["users"]
-pages = get_database()["pages"]
+db = get_database()
+
+users = db["users"]
+pages = db["pages"]
+flashcards = db["flashcards"]
 
 
 class User:
@@ -19,7 +22,7 @@ class User:
         self._model = user
 
         try:
-            self.notion = NotionAPI(user["access_token"])
+            self.notion = NotionAPI(user["access_token"], user["_id"])
         except KeyError:
             pass
 
@@ -98,20 +101,50 @@ class User:
         if result:
             return False
         page = self.notion.page().retrieve(page_id)
-        block = self.notion.block().retrieve(page_id)
-        flashcards = block.parse_flashcards()
         pages.insert_one({
             "page_id": page_id,
             "user": self._model["_id"],
             "title": page.get_title(),
-            "flashcards": flashcards
         })
+        self.load_flashcards(page_id)
         return True
 
     def get_pages(self, page_number, per_page=5):
         skip = (page_number - 1) * per_page if page_number > 0 else 0
         return pages.find({"user": self._model["_id"]}).skip(skip).limit(per_page)
 
-    # @staticmethod
+    def load_flashcards(self, page_id):
+        block = self.notion.block().retrieve(page_id)
+        flashcards_data = block.parse_flashcards()
+        flashcards_data_dicts = list(map(lambda i: i.__dict__, flashcards_data))
+        flashcards.insert(flashcards_data_dicts)
+
+    def reload_flashcards(self, page_id):
+        # TODO: адекватно переписати функцію
+        available_flashcards = flashcards.find({"page_id": page_id})
+        if available_flashcards.count() < 1:
+            return self.load_flashcards(page_id)
+        block = self.notion.block().retrieve(page_id)
+        flashcards_data = block.parse_flashcards()
+        # flashcards_data_dicts = list(map(lambda i: i.__dict__, flashcards_data))\
+        flashcards_data_dict = {}
+        for i in flashcards_data:
+            flashcards_data_dict[i.block_id] = i
+
+        for i in available_flashcards:
+            block_id = i["block_id"]
+            updated_flashcard = flashcards_data_dict.get(block_id)
+            if not updated_flashcard:
+                flashcards.delete_one({"block_id": block_id})
+                continue
+
+            if i["front_side"] != updated_flashcard.front_side or \
+                    i["back_side"] != updated_flashcard.back_side:
+                flashcards.update_one({"block_id": block_id}, {"$set": updated_flashcard.__dict__})
+
+        # flashcards.update_many({"user": self._model["_id"]}, flashcards_data_dict.values(), upsert=True)
+        # flashcards.find
+
+# @staticmethod
 # def get_user_by_state_token(state_token):
 #     return users.find_one({"state_tokens": {"$in": [state_token]}})

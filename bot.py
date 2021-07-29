@@ -4,6 +4,8 @@ from utils import env
 from user import User
 import re
 import logging
+from functools import wraps
+from functools import partial
 
 logger = telebot.logger
 telebot.logger.setLevel(logging.DEBUG)
@@ -31,7 +33,7 @@ def get_or_set_session(from_user):
         return SESSIONS[user_id]
 
 
-@bot.middleware_handler(update_types=['message'])
+@bot.middleware_handler(update_types=['message', 'callback_query'])
 def set_session(bot_instance, message):
     user = get_or_set_session(message.from_user)
     bot_instance.session = user
@@ -117,10 +119,36 @@ def add_page_save(message):
 def reload(message):
     # TODO: show pages to reload, sorted by reload time
     markup = InlineKeyboardMarkup()
-    last_three_button = InlineKeyboardButton("Reload 3 most recent", callback_data="reload_last_three")
+    last_three_button = InlineKeyboardButton("Reload 3 most recent", callback_data="reloadlol_last_three")
     markup.add(last_three_button)
     items = bot.session.get_pages(1)
     for item in items:
-        markup.add(InlineKeyboardButton(item["title"], callback_data=f"reload_{item['_id']}"))
+        markup.add(InlineKeyboardButton(item["title"], callback_data=f"reload_{item['page_id']}"))
 
     bot.reply_to(message, "Choose which page to reload", reply_markup=markup)
+
+
+def get_call_prefix(call):
+    return call.data.split("_")[0]
+
+
+def get_call_suffix(func):
+    print("hello")
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        call, *_ = args
+        print(_)
+        print(kwargs)
+        suffix = call.data.split("_")[1:]
+        return func(call, suffix)
+
+    return wrapper
+
+
+@bot.callback_query_handler(func=lambda call: get_call_prefix(call) == "reload")
+@get_call_suffix
+def reload_callback(call, suffix):
+    bot.session.reload_flashcards(suffix[-1])
+    text = "Flashcards successfully updated!"
+    bot.answer_callback_query(call.id, text)

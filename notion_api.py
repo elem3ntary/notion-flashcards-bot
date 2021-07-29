@@ -1,15 +1,20 @@
 import requests
 from dataclasses import dataclass
 from datetime import datetime
+from bson.objectid import ObjectId
+from typing import List
 
 
 @dataclass
 class Flashcard:
+    page_id: str
+    block_id: str
     front_side: str
     back_side: str
 
-    coefficient: int = 0
-    createdAt: int = datetime.now()
+    user: ObjectId
+
+    # coefficient: int = 0
 
     def __hash__(self):
         return self.front_side
@@ -18,21 +23,23 @@ class Flashcard:
 class NotionAPI:
     api_url = "https://api.notion.com/v1/"
 
-    def __init__(self, access_token):
+    def __init__(self, access_token, *args):
         self.access_token = access_token
+        self.args = args
 
     def page(self):
-        return Page(self.access_token, self.api_url)
+        return Page(self.access_token, self.api_url, *self.args)
 
     def block(self):
-        return Block(self.access_token, self.api_url)
+        return Block(self.access_token, self.api_url, *self.args)
 
 
 class ApiHandler:
 
-    def __init__(self, access_token, url):
+    def __init__(self, access_token, url, user_id):
         self.url = url
         self.access_token = access_token
+        self.user_id = user_id
 
     def _make_request(self, method: str, url, **kwargs) -> dict:
         headers = {
@@ -69,7 +76,7 @@ class Page(ApiHandler):
 
     def __init__(self, *args):
         super().__init__(*args)
-        self.url = self.url + "pages"
+        self.url += "pages"
 
     def get_title(self) -> str:
         return self.content["properties"]["title"]["title"][0]["text"]["content"]
@@ -79,20 +86,21 @@ class Block(ApiHandler):
 
     def __init__(self, *args):
         super(Block, self).__init__(*args)
-        self.url = self.url + "blocks"
+        self.url += "blocks"
 
     def retrieve(self, item_id: str):
+        self.page_id = item_id
         response = self._make_request("GET", f"{self.url}/{item_id}/children")
         self.content = response
         return self
 
     @staticmethod
-    def __parse_bulleted_item(item):
+    def __parse_bulleted_item(item, user_id, page_id) -> Flashcard:
         block_text = item["bulleted_list_item"]["text"][0]["plain_text"]
         front_side, back_side = block_text.strip().split("::")
-        return Flashcard(front_side, back_side)
+        return Flashcard(page_id, item["id"], front_side, back_side, user_id, )
 
-    def parse_flashcards(self):
+    def parse_flashcards(self) -> List[Flashcard]:
         children = self.content["results"]
         flashcards = []
         parse_options = {
@@ -100,6 +108,6 @@ class Block(ApiHandler):
         }
         for block in children:
             if parse_option := parse_options.get(block["type"]):
-                flashcards.append(parse_option(block).__dict__)
+                flashcards.append(parse_option(block, self.user_id, self.page_id))
 
         return flashcards
