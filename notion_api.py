@@ -2,7 +2,7 @@ import requests
 from dataclasses import dataclass
 from datetime import datetime
 from bson.objectid import ObjectId
-from typing import List
+from typing import List, Union
 
 
 @dataclass
@@ -83,6 +83,7 @@ class Page(ApiHandler):
 
 
 class Block(ApiHandler):
+    flashcard_smile = "🧩"
 
     def __init__(self, *args):
         super(Block, self).__init__(*args)
@@ -95,8 +96,10 @@ class Block(ApiHandler):
         return self
 
     @staticmethod
-    def __parse_bulleted_item(item, user_id, page_id) -> Flashcard:
+    def __parse_bulleted_item(item, user_id, page_id) -> Union[Flashcard, None]:
         block_text = item["bulleted_list_item"]["text"][0]["plain_text"]
+        if not Block.flashcard_smile in block_text:
+            return None
         front_side, back_side = block_text.strip().split("::")
         return Flashcard(page_id, item["id"], front_side, back_side, user_id, )
 
@@ -108,6 +111,8 @@ class Block(ApiHandler):
         }
         for block in children:
             if parse_option := parse_options.get(block["type"]):
-                flashcards.append(parse_option(block, self.user_id, self.page_id))
+                flashcard = parse_option(block, self.user_id, self.page_id)
+                if flashcard:
+                    flashcards.append(flashcard)
 
         return flashcards

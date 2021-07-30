@@ -94,7 +94,7 @@ def add_page(message):
 
 
 def add_page_save(message):
-    match = re.search(r"https://www.notion.so/.+-(.+)", message.text)
+    match = re.search(r"^https://www.notion.so/.+-(.{32})$", message.text)
 
     # TODO: забрати костиль та зробити декоратор
     if action := RESERVED_KEYWORDS.get(message.text, None):
@@ -107,7 +107,7 @@ def add_page_save(message):
     page_id = match.groups()[0]
     result = bot.session.add_page(page_id)
     if not result:
-        text = "Page already exists or an error happened ⛔️"
+        text = "Page already exists or max page limit (5) exceeded ⛔️"
     else:
         page_title = bot.session.notion.page().retrieve(page_id).get_title()
         text = f"Page \"{page_title}\" successfully added ✅"
@@ -123,6 +123,7 @@ def reload(message):
     markup.add(last_three_button)
     items = bot.session.get_pages(1)
     for item in items:
+        # TODO: possibility to delete pages
         markup.add(InlineKeyboardButton(item["title"], callback_data=f"reload_{item['page_id']}"))
 
     bot.reply_to(message, "Choose which page to reload", reply_markup=markup)
@@ -133,13 +134,9 @@ def get_call_prefix(call):
 
 
 def get_call_suffix(func):
-    print("hello")
-
     @wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args):
         call, *_ = args
-        print(_)
-        print(kwargs)
         suffix = call.data.split("_")[1:]
         return func(call, suffix)
 
@@ -149,6 +146,14 @@ def get_call_suffix(func):
 @bot.callback_query_handler(func=lambda call: get_call_prefix(call) == "reload")
 @get_call_suffix
 def reload_callback(call, suffix):
-    bot.session.reload_flashcards(suffix[-1])
-    text = "Flashcards successfully updated!"
+    result = bot.session.reload_flashcards(suffix[-1])
+    if not result:
+        text = "Error! Page might not exist"
+    else:
+        text = "Flashcards successfully updated!"
     bot.answer_callback_query(call.id, text)
+
+# TODO: study mode
+# TODO: passive learning mode
+# TODO: passive learning mode settings
+# TODO: export to anki?

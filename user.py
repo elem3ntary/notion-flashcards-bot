@@ -1,3 +1,4 @@
+from datetime import datetime
 from utils import env
 from db import get_database
 import urllib.parse
@@ -47,18 +48,6 @@ class User:
     def register(user_id, first_name):
         return users.insert_one({"user_id": user_id, "first_name": first_name})
 
-    # def gen_state_token(self) -> str:
-    #     """
-    #     Generates a token that is used to identify user authorization attempt
-    #     """
-    #     token = str(uuid())
-    #     state_token = {
-    #         "token": token,
-    #         "createdAt": str(datetime.now())
-    #     }
-    #     users.update_one({"_id": self.user["_id"]}, {"$push": {"state_tokens": state_token}})
-    #     return token
-
     def generate_login_url(self):
         args = {
             "client_id": env['NOTION_CLIENT_ID'],
@@ -98,7 +87,8 @@ class User:
 
     def add_page(self, page_id: str) -> bool:
         result = pages.find_one({"page_id": page_id, "user": self._model["_id"]})
-        if result:
+        count = pages.find().count()
+        if result or count >= 5:
             return False
         page = self.notion.page().retrieve(page_id)
         pages.insert_one({
@@ -106,45 +96,46 @@ class User:
             "user": self._model["_id"],
             "title": page.get_title(),
         })
-        self.load_flashcards(page_id)
+        self.reload_flashcards(page_id)
         return True
 
     def get_pages(self, page_number, per_page=5):
         skip = (page_number - 1) * per_page if page_number > 0 else 0
-        return pages.find({"user": self._model["_id"]}).skip(skip).limit(per_page)
-
-    def load_flashcards(self, page_id):
-        block = self.notion.block().retrieve(page_id)
-        flashcards_data = block.parse_flashcards()
-        flashcards_data_dicts = list(map(lambda i: i.__dict__, flashcards_data))
-        flashcards.insert(flashcards_data_dicts)
+        return pages.find({"user": self._model["_id"]}).skip(skip).limit(per_page).sort("updatedAt", direction=-1)
 
     def reload_flashcards(self, page_id):
-        # TODO: адекватно переписати функцію
-        available_flashcards = flashcards.find({"page_id": page_id})
-        if available_flashcards.count() < 1:
-            return self.load_flashcards(page_id)
+        result = pages.update_one({"page_id": page_id}, {"$set": {"updatedAt": datetime.now()}})
+        if result.matched_count == 0:
+            return False
+
         block = self.notion.block().retrieve(page_id)
-        flashcards_data = block.parse_flashcards()
-        # flashcards_data_dicts = list(map(lambda i: i.__dict__, flashcards_data))\
-        flashcards_data_dict = {}
-        for i in flashcards_data:
-            flashcards_data_dict[i.block_id] = i
+        retrieved_flashcards = block.parse_flashcards()
 
+        available_flashcards = flashcards.find({"page_id": page_id})
+        available_flashcards_dict = {}
         for i in available_flashcards:
-            block_id = i["block_id"]
-            updated_flashcard = flashcards_data_dict.get(block_id)
-            if not updated_flashcard:
-                flashcards.delete_one({"block_id": block_id})
+            available_flashcards_dict[i["block_id"]] = i
+
+        to_insert = []
+        for retrieved_flashcard in retrieved_flashcards:
+            block_id = retrieved_flashcard.block_id
+
+            flashcard_exists = available_flashcards_dict.get(block_id)
+            if not flashcard_exists:
+                retrieved_flashcard.createdAt = datetime.now()
+                to_insert.append(retrieved_flashcard.__dict__)
                 continue
+            del available_flashcards_dict[block_id]
 
-            if i["front_side"] != updated_flashcard.front_side or \
-                    i["back_side"] != updated_flashcard.back_side:
-                flashcards.update_one({"block_id": block_id}, {"$set": updated_flashcard.__dict__})
+            if flashcard_exists["front_side"] != retrieved_flashcard.front_side or \
+                    flashcard_exists["back_side"] != retrieved_flashcard.back_side:
+                retrieved_flashcard.editedAt = datetime.now()
+                flashcards.update_one({"block_id": block_id}, {"$set": retrieved_flashcard.__dict__, })
 
-        # flashcards.update_many({"user": self._model["_id"]}, flashcards_data_dict.values(), upsert=True)
-        # flashcards.find
+        if len(to_insert) > 0:
+            flashcards.insert(to_insert)
+        to_delete = list(map(lambda i: i["block_id"], available_flashcards_dict.values()))
+        if len(to_delete) > 0:
+            flashcards.delete_many({"block_id": {"$in": to_delete}})
 
-# @staticmethod
-# def get_user_by_state_token(state_token):
-#     return users.find_one({"state_tokens": {"$in": [state_token]}})
+        return True
