@@ -110,23 +110,33 @@ def add_page_save(message):
         text = "Page already exists or max page limit (5) exceeded ⛔️"
     else:
         page_title = bot.session.notion.page().retrieve(page_id).get_title()
-        text = f"Page \"{page_title}\" successfully added ✅"
+        text = f"Page \"{page_title}\" successfully added and flashcards reloaded✅"
 
     bot.send_message(message.from_user.id, text)
 
 
+def render_pages_markup(pages):
+    markup = InlineKeyboardMarkup()
+    for item in pages:
+        title_button = InlineKeyboardButton(f"{item['title']}",
+                                            callback_data=f"title_{item['page_id']}")
+        reload_button = InlineKeyboardButton("♻️️", callback_data=f"reload_{item['page_id']}")
+        delete_button = InlineKeyboardButton("⛔️", callback_data=f"delete_{item['page_id']}")
+        markup.add(title_button, reload_button, delete_button)
+
+    return markup
+
+
 @bot.message_handler(commands=["reload"])
 def reload(message):
-    # TODO: show pages to reload, sorted by reload time
-    markup = InlineKeyboardMarkup()
-    last_three_button = InlineKeyboardButton("Reload 3 most recent", callback_data="reloadlol_last_three")
-    markup.add(last_three_button)
-    items = bot.session.get_pages(1)
-    for item in items:
-        # TODO: possibility to delete pages
-        markup.add(InlineKeyboardButton(item["title"], callback_data=f"reload_{item['page_id']}"))
+    pages = bot.session.get_pages(1)
+    if pages.count() < 1:
+        text = "No pages are added"
+    else:
+        text = "Choose which page to reload"
 
-    bot.reply_to(message, "Choose which page to reload", reply_markup=markup)
+    markup = render_pages_markup(pages)
+    bot.reply_to(message, text, reply_markup=markup)
 
 
 def get_call_prefix(call):
@@ -137,7 +147,7 @@ def get_call_suffix(func):
     @wraps(func)
     def wrapper(*args):
         call, *_ = args
-        suffix = call.data.split("_")[1:]
+        suffix = call.data.split("_")[-1]
         return func(call, suffix)
 
     return wrapper
@@ -146,12 +156,60 @@ def get_call_suffix(func):
 @bot.callback_query_handler(func=lambda call: get_call_prefix(call) == "reload")
 @get_call_suffix
 def reload_callback(call, suffix):
-    result = bot.session.reload_flashcards(suffix[-1])
+    result = bot.session.reload_flashcards(suffix)
     if not result:
         text = "Error! Page might not exist"
     else:
         text = "Flashcards successfully updated!"
     bot.answer_callback_query(call.id, text)
+
+
+@bot.callback_query_handler(func=lambda call: get_call_prefix(call) == "delete")
+@get_call_suffix
+def delete_callback(call, suffix):
+    bot.session.delete_page(suffix)
+    text = "Page deleted"
+    bot.answer_callback_query(call.id, text)
+    pages = bot.session.get_pages(1)
+    markup = render_pages_markup(pages)
+    bot.edit_message_reply_markup(call.message.chat.id, call.message.id, reply_markup=markup)
+
+
+def render_flashcard_message(flashcard, front_side=True):
+    markup = InlineKeyboardMarkup()
+    flashcard_id = flashcard['_id']
+    text = "-" * 25 + "Flashcard" + "-" * 25 + "\n\n"
+    text += flashcard["front_side"] if front_side else flashcard["back_side"]
+    flashcard_position = "front" if front_side else "back"
+    flashcard_text_btn = InlineKeyboardButton("*flip*",
+                                              callback_data=f"flashcard-flip_{flashcard_position}_{flashcard_id}")
+
+    markup.add(flashcard_text_btn, row_width=10)
+    yes_btn = InlineKeyboardButton("✅", callback_data=f"flashcard-yes_{flashcard_id}")
+    easy_btn = InlineKeyboardButton("✨", callback_data=f"flashcard-ez_{flashcard_id}")
+    hard_btn = InlineKeyboardButton("🏋️‍♂️", callback_data=f"flashcard-hard_{flashcard_id}")
+    no_btn = InlineKeyboardButton("❌", callback_data=f"flashcard-no_{flashcard_id}")
+
+    markup.add(easy_btn, hard_btn, no_btn)
+    markup.add(yes_btn)
+
+    return text, markup
+
+
+@bot.message_handler(commands=["study"])
+def study_mode(message):
+    flashcard = bot.session.get_next_flashcard()
+    text, markup = render_flashcard_message(flashcard)
+    bot.send_message(message.from_user.id, text, reply_markup=markup)
+
+
+@bot.callback_query_handler(func=lambda call: get_call_prefix(call) == "flashcard-flip")
+@get_call_suffix
+def flip_callback(call, suffix):
+    flashcard = bot.session.get_flashcard_by_id(suffix)
+    new_front_side = False if call.data.split("_")[1] == "front" else True
+    text, markup = render_flashcard_message(flashcard, front_side=new_front_side)
+    bot.edit_message_text(text, call.message.chat.id, call.message.id, reply_markup=markup)
 
 # TODO: study mode
 # TODO: passive learning mode

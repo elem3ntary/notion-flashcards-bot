@@ -139,3 +139,13 @@ class User:
             flashcards.delete_many({"block_id": {"$in": to_delete}})
 
         return True
+
+    def delete_page(self, page_id):
+        pages.delete_one({"page_id": page_id, "user": self._model["_id"]})
+        flashcards.delete_many({"page_id": page_id})
+
+    def get_next_flashcard(self):
+        return flashcards.find_one({"user": self._model["_id"]})
+
+    def get_flashcard_by_id(self, flashcard_id):
+        return flashcards.find_one({"_id": ObjectId(flashcard_id)})
