@@ -175,30 +175,36 @@ def delete_callback(call, suffix):
     bot.edit_message_reply_markup(call.message.chat.id, call.message.id, reply_markup=markup)
 
 
-def render_flashcard_message(flashcard, front_side=True):
+def render_flashcard_message(flashcard, front_side=True, active_study=True):
     markup = InlineKeyboardMarkup()
     flashcard_id = flashcard['_id']
-    text = "-" * 25 + "Flashcard" + "-" * 25 + "\n\n"
-    text += flashcard["front_side"] if front_side else flashcard["back_side"]
+    # text = "-" * 25 + "Flashcard" + "-" * 25 + "\n\n"
+    text = flashcard["front_side"] if front_side else flashcard["back_side"]
     flashcard_position = "front" if front_side else "back"
     flashcard_text_btn = InlineKeyboardButton("*flip*",
                                               callback_data=f"flashcard-flip_{flashcard_position}_{flashcard_id}")
 
     markup.add(flashcard_text_btn, row_width=10)
-    yes_btn = InlineKeyboardButton("✅", callback_data=f"flashcard-yes_{flashcard_id}")
-    easy_btn = InlineKeyboardButton("✨", callback_data=f"flashcard-ez_{flashcard_id}")
-    hard_btn = InlineKeyboardButton("🏋️‍♂️", callback_data=f"flashcard-hard_{flashcard_id}")
-    no_btn = InlineKeyboardButton("❌", callback_data=f"flashcard-no_{flashcard_id}")
+    yes_btn = InlineKeyboardButton("✅", callback_data=f"flashcard-answer_yes_{flashcard_id}")
+    no_btn = InlineKeyboardButton("❌", callback_data=f"flashcard-answer_no_{flashcard_id}")
 
-    markup.add(easy_btn, hard_btn, no_btn)
-    markup.add(yes_btn)
+    if not active_study:
+        easy_btn = InlineKeyboardButton("✨", callback_data=f"flashcard-answer_ez_{flashcard_id}")
+        hard_btn = InlineKeyboardButton("🏋️‍♂️", callback_data=f"flashcard-answer_hard_{flashcard_id}")
+
+        markup.add(easy_btn, hard_btn, no_btn)
+        markup.add(yes_btn)
+    else:
+        markup.add(yes_btn, no_btn)
 
     return text, markup
 
 
 @bot.message_handler(commands=["study"])
 def study_mode(message):
-    flashcard = bot.session.get_next_flashcard()
+    flashcard = bot.session.active_study()
+    if not flashcard:
+        return bot.send_message(message.from_user.id, "Nothing to study! Well done!")
     text, markup = render_flashcard_message(flashcard)
     bot.send_message(message.from_user.id, text, reply_markup=markup)
 
@@ -211,7 +217,21 @@ def flip_callback(call, suffix):
     text, markup = render_flashcard_message(flashcard, front_side=new_front_side)
     bot.edit_message_text(text, call.message.chat.id, call.message.id, reply_markup=markup)
 
+
+@bot.callback_query_handler(func=lambda call: get_call_prefix(call) == "flashcard-answer")
+@get_call_suffix
+def flashcard_answers(call, suffix):
+    level_of_answer = call.data.split("_")[1]
+    bot.session.flashcard_answer(suffix, level_of_answer)
+
+    text = "Answer saved ^-^"
+    
+    bot.edit_message_text(text, call.message.chat.id, call.message.id)
 # TODO: study mode
 # TODO: passive learning mode
 # TODO: passive learning mode settings
 # TODO: export to anki?
+
+# spaced repetition 2.5 - 0.2
+
+# Learning phase 1 min -> Again -> 1 min -> Good -> 10 min -> Good -> Graduated

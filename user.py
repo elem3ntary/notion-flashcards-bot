@@ -145,7 +145,50 @@ class User:
         flashcards.delete_many({"page_id": page_id})
 
     def get_next_flashcard(self):
+
         return flashcards.find_one({"user": self._model["_id"]})
 
     def get_flashcard_by_id(self, flashcard_id):
         return flashcards.find_one({"_id": ObjectId(flashcard_id)})
+
+    def active_study(self):
+        active_cards_ids = self._model.get("active_cards", [])
+        active_cards_ids_list = list(active_cards_ids)
+
+        if (active_cards_count := len(active_cards_ids_list)) < 5:
+            additional_cards = flashcards.find(
+                {
+                    "$or": [
+                        {"active_coef": {"$exists": False}},
+                        {"active_coef": {"$lt": 1}}
+                    ],
+
+                    # ,
+                    "user": self._model["_id"],
+                    "_id": {"$nin": active_cards_ids}
+                }, {"_id": 1}) \
+                .limit(5 - active_cards_count)
+            additional_cards_ids = list(map(lambda i: i["_id"], list(additional_cards)))
+            users.update_one(self.model_db_id(), {"$addToSet": {"active_cards": {"$each": additional_cards_ids}}})
+            active_cards_ids_list.extend(additional_cards_ids)
+
+        card_to_show = flashcards \
+            .find({"_id": {"$in": active_cards_ids_list}}) \
+            .sort("active_coef", direction=1) \
+            .limit(1)
+        if card_to_show.count() < 1:
+            return None
+        return list(card_to_show)[0]
+
+    def flashcard_answer(self, card_id, answer):
+        card = self.get_flashcard_by_id(card_id)
+        active_coef = card.get("active_coef", 0)
+        active_coef_rules = {
+            "yes": lambda coef: coef + 0.5,
+            "no": lambda _: 0
+        }
+        active_coef_rule = active_coef_rules.get(answer, lambda coef: coef)
+        new_active_coef = active_coef_rule(active_coef)
+        flashcards.update_one({"_id": card["_id"]}, {"$set": {"active_coef": new_active_coef}})
+
+        # TODO: delete flashcard from user active cards
