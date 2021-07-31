@@ -3,6 +3,9 @@
 Telegram bot built with [Notion API](https://developers.notion.com/) 
 that helps you learn stuff by converting Notion bullet points to flashcards.
 
+![img_1](docs/img.png)
+![img_1](docs/img_1.png)
+
 # Releases
 
 + 1.0.0 - MVP 
