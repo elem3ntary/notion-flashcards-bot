@@ -11,7 +11,10 @@ TG_TOKEN = env['TG_TOKEN']
 
 
 def gen_public_url():
-    return ngrok.connect(PORT, bind_tls=True, host_header="just_testing123").public_url
+    """
+    Generates public ngrok link for dev purposes
+    """
+    return ngrok.connect(PORT, bind_tls=True).public_url
 
 
 if utils.env['DEV']:

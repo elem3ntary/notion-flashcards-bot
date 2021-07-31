@@ -19,6 +19,9 @@ def notion_auth():
 Successfully logged in ✅
 Workspace name: {result['workspace_name']}
     """
-    bot.send_photo(chat_id=user._model["user_id"], photo=result["workspace_icon"],
-                   caption=caption)
+    if workspace_icon := result.get("workspace_icon"):
+        bot.send_photo(chat_id=user.telegram_user_id, photo=workspace_icon,
+                       caption=caption)
+    else:
+        bot.send_message(chat_id=user.telegram_user_id, text=caption)
     return "Success"

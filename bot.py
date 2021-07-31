@@ -12,7 +12,9 @@ telebot.logger.setLevel(logging.DEBUG)
 
 telebot.apihelper.ENABLE_MIDDLEWARE = True
 bot = telebot.TeleBot(env['TG_TOKEN'])
-SESSIONS: dict[str, User] = {}
+
+
+
 
 bot.set_my_commands([
     BotCommand("/start", "Shows basic bot info"),
@@ -24,6 +26,9 @@ bot.set_my_commands([
 ])
 
 
+# Setting up user sessions
+SESSIONS: dict[str, User] = {}
+
 def get_or_set_session(from_user):
     user_id = from_user.id
     try:
@@ -32,11 +37,17 @@ def get_or_set_session(from_user):
         SESSIONS[user_id] = User.from_telegram_credentials(from_user)
         return SESSIONS[user_id]
 
-
 @bot.middleware_handler(update_types=['message', 'callback_query'])
 def set_session(bot_instance, message):
     user = get_or_set_session(message.from_user)
     bot_instance.session = user
+
+
+# Message handler
+
+@bot.message_handler(commands=["passive"])
+def passive(message):
+    bot.reply_to(message, "Passive mode is currently under development")
 
 
 @bot.message_handler(commands=["start"])
@@ -68,6 +79,7 @@ def stop_study(message):
     bot.reply_to(message, "Study mode in now off")
 
 
+# Handling "reserved words" for telegram keyboard to work
 return_to_main = "Return to main"
 stop_study_mode = "Stop study mode"
 RESERVED_KEYWORDS = {
@@ -101,9 +113,13 @@ def add_page(message):
 
 
 def add_page_save(message):
+    """
+    Next step handler for add_page function
+    """
     match = re.search(r"^https://www.notion.so/.+-(.{32})$", message.text)
 
-    # TODO: забрати костиль та зробити декоратор
+    # Reserved message handler does not include next step handlers
+    # Doing it manually
     if action := RESERVED_KEYWORDS.get(message.text, None):
         return action(message)
 
@@ -123,6 +139,9 @@ def add_page_save(message):
 
 
 def render_pages_markup(pages):
+    """
+    Renders pages keyboard
+    """
     markup = InlineKeyboardMarkup()
     for item in pages:
         title_button = InlineKeyboardButton(f"{item['title']}",
@@ -147,6 +166,10 @@ def reload(message):
 
 
 def get_call_prefix(call):
+    """
+    Gets callback_query prefix
+    All callback queries are written in format prefix_value for ex. reload_pageid
+    """
     return call.data.split("_")[0]
 
 
@@ -185,7 +208,6 @@ def delete_callback(call, suffix):
 def render_flashcard_message(flashcard, front_side=True, active_study=True):
     markup = InlineKeyboardMarkup()
     flashcard_id = flashcard['_id']
-    # text = "-" * 25 + "Flashcard" + "-" * 25 + "\n\n"
     text = flashcard["front_side"] if front_side else flashcard["back_side"]
     flashcard_position = "front" if front_side else "back"
     flashcard_text_btn = InlineKeyboardButton("*flip*",
@@ -221,7 +243,7 @@ def study_mode(message):
 
 def study_mode_start(message):
     text = "Starting study mode"
-    markup = ReplyKeyboardMarkup(one_time_keyboard=True)
+    markup = ReplyKeyboardMarkup(one_time_keyboard=True, resize_keyboard=True)
     markup.add(KeyboardButton(stop_study_mode))
     bot.session.set_study_mode(True)
     bot.send_message(message.from_user.id, text, reply_markup=markup)
@@ -253,10 +275,14 @@ def flashcard_answers(call, suffix):
     if bot.session.is_study_mode_active():
         study_mode(call.message)
 
-# TODO: study mode
+
+
+# TODO: fix bug that not transfers cards from study to passive mode
+
 # TODO: passive learning mode
 # TODO: passive learning mode settings
-# TODO: export to anki?
+
+# TODO: deploy on the server
 
 # spaced repetition 2.5 - 0.2
 

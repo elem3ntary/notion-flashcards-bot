@@ -14,7 +14,6 @@ class Flashcard:
 
     user: ObjectId
 
-    # coefficient: int = 0
 
     def __hash__(self):
         return self.front_side

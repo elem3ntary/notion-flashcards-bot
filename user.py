@@ -200,3 +200,7 @@ class User:
 
     def is_study_mode_active(self) -> bool:
         return bool(self._model["study_mode_active"])
+
+    @property
+    def telegram_user_id(self):
+        return str(self._model["user_id"])
