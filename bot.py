@@ -63,9 +63,16 @@ Productive learning bro!
     bot.reply_to(message, text)
 
 
+def stop_study(message):
+    bot.session.set_study_mode(False)
+    bot.reply_to(message, "Study mode in now off")
+
+
 return_to_main = "Return to main"
+stop_study_mode = "Stop study mode"
 RESERVED_KEYWORDS = {
-    return_to_main: start
+    return_to_main: start,
+    stop_study_mode: stop_study
 }
 
 
@@ -203,9 +210,20 @@ def render_flashcard_message(flashcard, front_side=True, active_study=True):
 @bot.message_handler(commands=["study"])
 def study_mode(message):
     flashcard = bot.session.active_study()
+    if not bot.session.is_study_mode_active():
+        study_mode_start(message)
     if not flashcard:
-        return bot.send_message(message.from_user.id, "Nothing to study! Well done!")
+        bot.send_message(message.from_user.id, "Nothing to study! Well done!")
+        return stop_study(message)
     text, markup = render_flashcard_message(flashcard)
+    bot.send_message(message.from_user.id, text, reply_markup=markup)
+
+
+def study_mode_start(message):
+    text = "Starting study mode"
+    markup = ReplyKeyboardMarkup(one_time_keyboard=True)
+    markup.add(KeyboardButton(stop_study_mode))
+    bot.session.set_study_mode(True)
     bot.send_message(message.from_user.id, text, reply_markup=markup)
 
 
@@ -225,8 +243,16 @@ def flashcard_answers(call, suffix):
     bot.session.flashcard_answer(suffix, level_of_answer)
 
     text = "Answer saved ^-^"
-    
+
     bot.edit_message_text(text, call.message.chat.id, call.message.id)
+
+    # костиль
+    call.message.from_user = call.from_user
+    #
+
+    if bot.session.is_study_mode_active():
+        study_mode(call.message)
+
 # TODO: study mode
 # TODO: passive learning mode
 # TODO: passive learning mode settings

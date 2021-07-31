@@ -160,7 +160,7 @@ class User:
                 {
                     "$or": [
                         {"active_coef": {"$exists": False}},
-                        {"active_coef": {"$lt": 1}}
+                        {"active_coef": {"$lt": 1.5}}
                     ],
 
                     # ,
@@ -169,6 +169,7 @@ class User:
                 }, {"_id": 1}) \
                 .limit(5 - active_cards_count)
             additional_cards_ids = list(map(lambda i: i["_id"], list(additional_cards)))
+            print(additional_cards_ids)
             users.update_one(self.model_db_id(), {"$addToSet": {"active_cards": {"$each": additional_cards_ids}}})
             active_cards_ids_list.extend(additional_cards_ids)
 
@@ -191,4 +192,11 @@ class User:
         new_active_coef = active_coef_rule(active_coef)
         flashcards.update_one({"_id": card["_id"]}, {"$set": {"active_coef": new_active_coef}})
 
-        # TODO: delete flashcard from user active cards
+        if new_active_coef >= 1.5:
+            users.update_one(self.model_db_id(), {"$pull": {"active_cards": {"$in": [card["_id"]]}}})
+
+    def set_study_mode(self, study_mode_state: bool):
+        users.update_one(self.model_db_id(), {"$set": {"study_mode_active": study_mode_state}})
+
+    def is_study_mode_active(self) -> bool:
+        return bool(self._model["study_mode_active"])
